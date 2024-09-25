@@ -5,8 +5,11 @@ set -o pipefail
 
 apk update
 
-# install pg_dump
-apk add postgresql-client
+# install zip
+apk add zip
+
+# install npm
+apk add --update npm
 
 # install gpg
 apk add gnupg
@@ -22,6 +25,8 @@ mv go-cron /usr/local/bin/go-cron
 chmod u+x /usr/local/bin/go-cron
 apk del curl
 
+# install elasticsearch-dump
+npm install elasticdump -g
 
 # cleanup
 rm -rf /var/cache/apk/*

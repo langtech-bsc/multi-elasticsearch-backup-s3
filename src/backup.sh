@@ -5,27 +5,36 @@ set -o pipefail
 
 source ./env.sh
 
-echo "Creating backup of $POSTGRES_DATABASE database..."
-pg_dump --format=custom \
-        -h $POSTGRES_HOST \
-        -p $POSTGRES_PORT \
-        -U $POSTGRES_USER \
-        -d $POSTGRES_DATABASE \
-        $PGDUMP_EXTRA_OPTS \
-        > db.dump
+echo "Creating backup of $ELASTICSEARCH_HOST indices..."
 
 timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
-s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}.dump"
+
+sanitized_host=$(echo "$ELASTICSEARCH_HOST" | sed 's|https\?://||' | tr '.' '_' )
+dump_folder="elastic_indices_$timestamp"
+
+mkdir -p $dump_folder
+
+multielasticdump \
+  --direction=dump \
+  --match='^.*$' \
+  --input="http://$ELASTICSEARCH_USER:$ELASTICSEARCH_PASSWORD@$ELASTICSEARCH_HOST" \
+  --output=$dump_folder
+
+zip_file_name="$dump_folder.dump.zip"
+
+zip -r -j $zip_file_name $dump_folder/*
+
+s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/$zip_file_name"
 
 if [ -n "$PASSPHRASE" ]; then
   echo "Encrypting backup..."
-  rm -f db.dump.gpg
-  gpg --symmetric --batch --passphrase "$PASSPHRASE" db.dump
-  rm db.dump
-  local_file="db.dump.gpg"
+  rm -f "$zip_file_name.gpg"
+  gpg --symmetric --batch --passphrase "$PASSPHRASE" $zip_file_name
+  rm $zip_file_name
+  local_file="$zip_file_name.gpg"
   s3_uri="${s3_uri_base}.gpg"
 else
-  local_file="db.dump"
+  local_file="$zip_file_name"
   s3_uri="$s3_uri_base"
 fi
 
